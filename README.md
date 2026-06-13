@@ -1,70 +1,93 @@
-# ternary-sync
+# Ternary Sync — Synchronization Primitives for Z₃ Cyclic Agent Coordination
 
-**Z₃ synchronization for ternary agents. The only sync that works.**
+**Ternary Sync** implements synchronization for populations of ternary agents {-1, 0, +1} using Z₃ cyclic dynamics. Agents are coupled through Kuramoto-style phase interactions, and the system converges (or anti-converges) based on coupling strength. It provides coherence measurement, sync time estimation, and anti-sync state generation.
 
-Ternary systems can't synchronize the way binary systems do. Kuramoto fails. Consensus fails. Flocking fails. The 0 state screens everything. So what *does* work?
+## Why It Matters
 
-**Z₃ cyclic rotation.** Instead of trying to make everyone agree on the same value, agents cycle through all three states in a fixed rotation: -1 → 0 → +1 → -1 → ... This is the Z₃ group — the cyclic group of order 3. Each agent has a phase offset. When phase offsets align, agents are "in sync" — not because they're at the same value, but because they're at the *same phase* of the cycle.
+Synchronization is fundamental to distributed systems: agents must align their states to coordinate effectively. The Z₃ structure adds a unique dimension — unlike continuous phase oscillators, ternary agents have exactly three states, and synchronization means consensus on one of them. The coupling strength determines whether agents synchronize (high coupling), oscillate chaotically (low coupling), or achieve anti-synchronization (medium coupling with phase repulsion). Understanding these regimes is critical for fleet tuning: too much coupling causes groupthink (all agents converge to the same state), too little causes incoherence.
 
-The coupling strength determines how quickly agents align their phase offsets. At low coupling, agents drift independently. At high coupling, they lock into the Z₃ rotation together.
+## How It Works
 
-## What's Inside
+### Kuramoto-Style Coupling
 
-- **`SyncGroup`** — a group of ternary agents with coupling strength and phase offsets
-- **`step(tick)`** — advance one tick. Each agent rotates based on coupling and phase
-- **`rotate(value, amount)`** — Z₃ rotation: cycle through {-1, 0, +1}
-- **`sync_order(agents)`** — how synchronized is the group? Based on phase alignment, not value alignment
-- **`consensus(agents)`** — is there a majority value? (Usually no — that's the point)
+Each agent has a phase offset and a ternary state. At each tick:
 
-## Quick Example
-
-```rust
-use ternary_sync::*;
-
-// 10 agents with moderate coupling
-let mut group = SyncGroup::new(10, 0.5);
-
-// Run 100 ticks
-for tick in 0..100 {
-    let states = group.step(tick);
-    // States rotate through {-1, 0, +1} but phase-align over time
-}
-
-// Check sync order
-let order = sync_order(&group.agents);
-// High order = phases aligned, low = phases scattered
-
-// Z₃ rotation
-assert_eq!(rotate(-1, 1), 0);   // -1 → 0
-assert_eq!(rotate(0, 1), 1);    // 0 → +1
-assert_eq!(rotate(1, 1), -1);   // +1 → -1 (wraps)
+```
+influence_i = K × sin(tick × phase_offset_i)
+rotation_i  = influence_i > 0.3 ? +1 : influence_i < -0.3 ? -1 : 0
+new_state_i = rotate(state_i, rotation_i)
 ```
 
-## The Deeper Truth
+where K is the coupling constant. Then, global coupling pulls agents toward the population average.
 
-**Z₃ is the ONLY algebraic structure that works on ternary.** The spiral experiments proved this exhaustively: of all 19,683 possible binary operations on a 3-element set, only 3 form groups — and all three are Z₃ (just with different identity elements). This means cyclic rotation is *the* canonical coordination mechanism for ternary systems. It's not a design choice — it's a mathematical necessity.
+### Coherence
 
-The practical consequence: don't try to make ternary agents agree on a value. Make them agree on a *phase*. The value will cycle — that's fine. What matters is that the cycle is synchronized: everyone rotates together. This is how Z₃ synchronization achieves coordination without consensus.
+Coherence measures how aligned the population is:
 
-**Use cases:**
-- **Multi-agent coordination** — the only synchronization that works for ternary agents
-- **Load balancing** — cycle agents through states fairly
-- **Round-robin scheduling** — Z₃ rotation as a scheduling primitive
-- **Music synchronization** — beat alignment in ternary rhythm systems
-- **Distributed consensus** — when binary consensus fails, use Z₃ phase alignment
+```
+coherence = max(count(-1), count(0), count(+1)) / N
+```
 
-## See Also
+Coherence = 1.0 when all agents agree; 0.33 when perfectly split three ways. O(N) per measurement.
 
-- **ternary-kuramoto** — the proof that conventional synchronization fails
-- **ternary-phase** — phase relationships between synchronized agents
-- **ternary-rhythm** — rhythm patterns built on Z₃ timing
-- **ternary-speculate** — speculative coordination when sync isn't available
+### Sync Time
 
-## Install
+The `sync_time()` method runs the simulation until coherence exceeds 0.99 (or 1000 ticks timeout). Returns the number of ticks to synchronize. For N agents with coupling K, expected sync time scales as:
+
+```
+T_sync ∝ N / (K - Kc)   where Kc is the critical coupling
+```
+
+### Anti-Synchronization
+
+`anti_sync()` returns the maximally desynchronized state: agents evenly distributed across {-1, 0, +1}. This is the maximum-entropy state and the starting point for synchronization experiments.
+
+### Rotation in Z₃
+
+`rotate(state, offset)`: shifts a ternary state by a continuous offset, discretized to {-1, 0, +1}. Positive offset advances toward +1, negative toward -1.
+
+## Quick Start
+
+```rust
+use ternary_sync::SyncGroup;
+
+let mut group = SyncGroup::new(50, 0.5); // 50 agents, coupling 0.5
+
+// Run until synchronized
+let sync_ticks = group.sync_time();
+println!("Synchronized in {} ticks", sync_ticks.unwrap_or(0));
+
+// Check coherence
+let c = group.coherence();
+println!("Coherence: {:.2}", c);
+
+// Get anti-synchronized state
+let desync = group.anti_sync();
+```
 
 ```bash
 cargo add ternary-sync
 ```
+
+## API
+
+| Type / Function | Description |
+|---|---|
+| `SyncGroup` | `{ agents, coupling, phase_offsets }` |
+| `SyncGroup::step(tick)` | One tick of Kuramoto-style dynamics |
+| `coherence()` | Maximum state fraction (O(N)) |
+| `sync_time()` | Ticks to reach coherence > 0.99 |
+| `anti_sync()` | Maximally distributed state |
+
+## Architecture Notes
+
+Sync primitives coordinate **SuperInstance** agent populations. The γ + η = C conservation manifests in the coherence-diversity trade-off: high coherence (high γ = aligned growth) means low diversity (low η), and vice versa. Optimal fleet performance requires partial synchronization — enough coherence for coordination, enough diversity for adaptation. See [Architecture](https://github.com/SuperInstance/SuperInstance/blob/main/ARCHITECTURE.md).
+
+## References
+
+- Kuramoto, Yoshiki. *Chemical Oscillations, Waves, and Turbulence*, Springer, 1984 — coupled oscillator model.
+- Strogatz, Steven. *Sync: The Emerging Science of Spontaneous Order*, Hyperion, 2003.
+| Acebrón, Juan et al. "The Kuramoto Model: A Simple Paradigm for Synchronization Phenomena," *Rev. Mod. Phys.*, 77, 2005.
 
 ## License
 
