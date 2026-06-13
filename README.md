@@ -89,6 +89,19 @@ Sync primitives coordinate **SuperInstance** agent populations. The γ + η = C 
 - Strogatz, Steven. *Sync: The Emerging Science of Spontaneous Order*, Hyperion, 2003.
 | Acebrón, Juan et al. "The Kuramoto Model: A Simple Paradigm for Synchronization Phenomena," *Rev. Mod. Phys.*, 77, 2005.
 
+
+
+## Complexity Summary
+
+| Operation | Time | Notes |
+|---|---|---|
+| step(tick) | O(N) for N agents | Phase update + coupling |
+| coherence() | O(N) | Count + max |
+| sync_time() | O(T × N) | Run until coherence > 0.99 |
+| anti_sync() | O(N) | Generate balanced distribution |
+
+For N = 100 agents with coupling K = 0.5, typical sync time is 15-30 ticks. Anti-sync (perfect diversity) is the O(N) starting point for measuring convergence speed.
+
 ## License
 
 MIT
